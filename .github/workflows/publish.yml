@@ -1,0 +1,88 @@
+name: Publish to npm
+
+# 通过 tag 触发发布，例如：
+#   git tag magpie-plugin-amd@0.1.1 && git push origin magpie-plugin-amd@0.1.1
+on:
+  push:
+    tags:
+      - "magpie-plugin-*@*"
+
+# Trusted Publishing（OIDC）必需：
+#   id-token: write —— GitHub 才能签发 OIDC token 换取 npm 短期发布凭证
+#   contents: read  —— checkout 代码
+# 不再需要任何 npm token / secret。
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - name: magpie-plugin-loomy
+            dir: packages/loomy
+            test: loomy
+          - name: magpie-plugin-amd
+            dir: packages/amd
+            test: amd
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22.14.0+ 才带支持 OIDC 的 npm；这里用 24 对应的 npm 11.x。
+      # registry-url 必须设置，否则 npm 不知道要为哪个 registry 换取 OIDC 凭证。
+      # 注意：该 action 会自动生成 .npmrc 并写入一个占位的 NODE_AUTH_TOKEN，
+      # npm 会先尝试 OIDC 并覆盖它，因此不要自行传入真实 token。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # npm < 11.5.1 不含 OIDC 实现，会退化成匿名发布并报 E404，这里提前拦住。
+      - name: Verify npm CLI supports trusted publishing
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name))
+        run: |
+          npm --version
+          node -e 'const v = require("node:child_process").execSync("npm --version").toString().trim(); const [maj, min, patch] = v.split(".").map(Number); const ok = maj > 11 || (maj === 11 && (min > 5 || (min === 5 && patch >= 1))); if (!ok) { console.error("::error::Trusted publishing requires npm >= 11.5.1 (got " + v + "). Use Node >= 22.14."); process.exit(1); }'
+
+      # 只有 tag 前缀匹配当前 matrix 包时才执行后续步骤
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name))
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          PKG_DIR: ${{ matrix.package.dir }}
+          PKG_NAME: ${{ matrix.package.name }}
+        run: |
+          # 注意：不能直接写 ${github.ref_name}，变量名含点会被 bash 判为 bad substitution
+          tag_version="${REF_NAME#*@}"
+          pkg_version=$(node -p "require('./' + process.env.PKG_DIR + '/package.json').version")
+          echo "tag=$tag_version package.json=$pkg_version"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag version ($tag_version) does not match $PKG_DIR/package.json version ($pkg_version). Bump the version first."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name))
+        run: npm ci
+
+      # loomy 的用例用 bun:test 编写，CI 需要 Bun 运行时
+      - name: Setup Bun
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name)) && matrix.package.test == 'loomy'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run tests
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name))
+        run: npm run test:${{ matrix.package.test }}
+
+      # 不传 NODE_AUTH_TOKEN：npm 会用 GitHub OIDC token 换取一次性发布凭证。
+      # 也不要加 --provenance：Trusted Publishing 会自动生成 provenance，
+      # 显式传该参数反而会在私有仓库场景下报 422。
+      - name: Publish
+        if: startsWith(github.ref_name, format('{0}@', matrix.package.name))
+        run: npm publish --workspace=${{ matrix.package.name }} --access public
