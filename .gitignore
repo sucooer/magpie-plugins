@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 发布产物
+*.tgz
+packages/*/*.tgz
+
+# 运行/调试残留
+*.log
+test-output.txt
+run.log
+
+# 代理运行时的文件标记与临时工作区
+.*.artifact.json
+.box-agent/
+.box-agent-scratch/
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
