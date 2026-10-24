@@ -1,0 +1,32 @@
+{
+  "name": "magpie-plugins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "magpie / OpenCode provider plugins: Loomy (Xunfei) and AMD TokenFactory",
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test:amd",
+    "test:amd": "node --test packages/amd/index.test.mjs",
+    "test:loomy": "bun test packages/loomy/index.test.mjs",
+    "test:all": "bun test packages/loomy/index.test.mjs && node --test packages/amd/index.test.mjs",
+    "check": "node --check packages/loomy/index.mjs && node --check packages/amd/index.mjs",
+    "publish:loomy": "npm publish --workspace=magpie-plugin-loomy",
+    "publish:amd": "npm publish --workspace=magpie-plugin-amd"
+  },
+  "keywords": [
+    "magpie",
+    "opencode",
+    "opencode-plugin",
+    "provider",
+    "loomy",
+    "amd",
+    "tokenfactory"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
